@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { downloadMedia, downloadImagesAsZip, copyToClipboard } from '../utils/media';
-import { Download, Copy, Check, Eye, ChevronLeft, ChevronRight, X, ExternalLink, Archive, Images, ShieldCheck } from 'lucide-react';
+import { Download, Copy, Check, Eye, ChevronLeft, ChevronRight, X, ExternalLink, Archive, Images } from 'lucide-react';
 
 interface PhotoCarouselSectionProps {
   images: string[];
@@ -8,7 +8,11 @@ interface PhotoCarouselSectionProps {
   postId: string;
 }
 
-export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ images, authorHandle, postId }) => {
+export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({
+  images,
+  authorHandle,
+  postId,
+}) => {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
@@ -70,7 +74,7 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
   };
 
   return (
-    <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-xl backdrop-blur-md">
+    <div className="glass-panel rounded-2xl p-5 sm:p-6 shadow-xl">
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-800">
         <div>
@@ -82,7 +86,7 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
             </span>
           </div>
           <p className="text-xs text-zinc-400 mt-0.5">
-            Nhấp vào ảnh để xem to hoặc bấm nút tải từng ảnh / tải toàn bộ.
+            Nhấp vào ảnh để xem to hoặc bấm nút tải từng ảnh / tải toàn bộ file ZIP.
           </p>
         </div>
 
@@ -120,9 +124,9 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
       {isZipping && zipProgress && (
         <div className="my-4 p-3 bg-zinc-950 border border-zinc-800 rounded-xl animate-in fade-in">
           <div className="flex justify-between items-center text-xs text-zinc-400 mb-1.5 font-medium">
-            <span>Archiving photos into ZIP package...</span>
+            <span>Đang nén toàn bộ ảnh vào file ZIP...</span>
             <span className="font-mono text-zinc-200">
-              {zipProgress.current} / {zipProgress.total} images ({Math.round((zipProgress.current / zipProgress.total) * 100)}%)
+              {zipProgress.current} / {zipProgress.total} ảnh ({Math.round((zipProgress.current / zipProgress.total) * 100)}%)
             </span>
           </div>
           <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
@@ -148,17 +152,15 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
             >
               <img
                 src={imgUrl}
-                alt={`Slide ${idx + 1}`}
+                alt={`Ảnh ${idx + 1}`}
                 className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                 loading="lazy"
                 referrerPolicy="no-referrer"
               />
-              {/* Badge */}
-              <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-[11px] font-bold text-white border border-white/10">
-                #{idx + 1}
+              <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-[11px] font-bold text-white border border-white/10 font-mono">
+                #{String(idx + 1).padStart(2, '0')}
               </div>
 
-              {/* View Overlay on Hover */}
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                 <span className="p-2 rounded-xl bg-white/20 backdrop-blur-md text-white hover:scale-110 transition-transform">
                   <Eye className="w-5 h-5" />
@@ -174,13 +176,13 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
                 title="Tải ảnh này về"
               >
                 <Download className="w-3.5 h-3.5 text-[#25f4ee]" />
-                <span>Tải về</span>
+                <span>Tải ảnh</span>
               </button>
 
               <button
                 onClick={() => handleCopySingle(imgUrl, idx)}
                 className="p-1.5 text-zinc-400 hover:text-zinc-200 bg-zinc-900 hover:bg-zinc-800 rounded-lg border border-zinc-800 transition-colors cursor-pointer"
-                title="Sao chép link ảnh"
+                title="Sao chép link CDN"
               >
                 {copiedIndex === idx ? (
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -209,8 +211,11 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
           {/* Top Lightbox bar */}
           <div className="flex items-center justify-between z-10">
             <div className="flex items-center gap-3">
-              <span className="text-sm font-bold text-white bg-zinc-800 px-3 py-1 rounded-lg border border-zinc-700">
+              <span className="text-sm font-bold text-white bg-zinc-800 px-3 py-1 rounded-lg border border-zinc-700 font-mono">
                 Ảnh {lightboxIndex + 1} / {images.length}
+              </span>
+              <span className="text-xs text-zinc-400 hidden sm:inline">
+                Dùng phím ← → để chuyển ảnh • Esc để đóng
               </span>
             </div>
 
@@ -218,14 +223,28 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
               <button
                 onClick={() => handleDownloadSingle(images[lightboxIndex], lightboxIndex)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-[#fe2c55] hover:bg-[#e01440] rounded-lg transition-colors shadow-md cursor-pointer"
+                title="Tải ảnh về máy"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Tải ảnh</span>
               </button>
+
+              <button
+                onClick={() => handleCopySingle(images[lightboxIndex], lightboxIndex)}
+                className="p-1.5 text-zinc-300 hover:text-white bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors cursor-pointer"
+                title="Sao chép link CDN"
+              >
+                {copiedIndex === lightboxIndex ? (
+                  <Check className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+
               <button
                 onClick={() => setLightboxIndex(null)}
-                className="p-1.5 text-zinc-400 hover:text-white bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors"
-                title="Close (Esc)"
+                className="p-1.5 text-zinc-400 hover:text-white bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors cursor-pointer"
+                title="Đóng (Esc)"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -236,7 +255,7 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
           <div className="relative flex-1 flex items-center justify-center p-2 my-2 overflow-hidden">
             <img
               src={images[lightboxIndex]}
-              alt={`Slide ${lightboxIndex + 1}`}
+              alt={`Ảnh ${lightboxIndex + 1}`}
               className="max-h-[82vh] max-w-full object-contain rounded-xl shadow-2xl transition-all"
               referrerPolicy="no-referrer"
             />
@@ -246,15 +265,15 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
               <>
                 <button
                   onClick={() => setLightboxIndex((prev) => (prev! > 0 ? prev! - 1 : images.length - 1))}
-                  className="absolute left-2 sm:left-4 p-3 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-white border border-zinc-700/80 backdrop-blur-md transition-all shadow-xl hover:scale-105"
-                  title="Previous photo"
+                  className="absolute left-2 sm:left-4 p-3 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-white border border-zinc-700/80 backdrop-blur-md transition-all shadow-xl hover:scale-105 cursor-pointer"
+                  title="Ảnh trước"
                 >
                   <ChevronLeft className="w-6 h-6" />
                 </button>
                 <button
                   onClick={() => setLightboxIndex((prev) => (prev! < images.length - 1 ? prev! + 1 : 0))}
-                  className="absolute right-2 sm:right-4 p-3 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-white border border-zinc-700/80 backdrop-blur-md transition-all shadow-xl hover:scale-105"
-                  title="Next photo"
+                  className="absolute right-2 sm:right-4 p-3 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-white border border-zinc-700/80 backdrop-blur-md transition-all shadow-xl hover:scale-105 cursor-pointer"
+                  title="Ảnh sau"
                 >
                   <ChevronRight className="w-6 h-6" />
                 </button>
@@ -268,7 +287,7 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
               <button
                 key={idx}
                 onClick={() => setLightboxIndex(idx)}
-                className={`relative shrink-0 w-12 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                className={`relative shrink-0 w-12 h-16 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
                   lightboxIndex === idx
                     ? 'border-[#fe2c55] scale-105 shadow-md shadow-[#fe2c55]/30'
                     : 'border-zinc-800 opacity-60 hover:opacity-100'
@@ -288,3 +307,4 @@ export const PhotoCarouselSection: React.FC<PhotoCarouselSectionProps> = ({ imag
     </div>
   );
 };
+

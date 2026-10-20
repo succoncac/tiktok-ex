@@ -71,6 +71,18 @@ export default {
 };
 
 /**
+ * Normalizes relative URLs (e.g. from TikWM API) to absolute HTTPS URLs
+ */
+function normalizeMediaUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('//')) return 'https:' + trimmed;
+  if (trimmed.startsWith('/')) return 'https://www.tikwm.com' + trimmed;
+  return trimmed;
+}
+
+/**
  * Resolve short links (vm.tiktok.com, vt.tiktok.com) to canonical URL
  */
 async function resolveTikTokUrl(inputUrl) {
@@ -280,9 +292,9 @@ async function handleExtract(url) {
     // Extract all images dynamically (supporting carousels up to 35+ images)
     let rawImages = [];
     if (Array.isArray(data.images) && data.images.length > 0) {
-      rawImages = data.images.map((img) => (typeof img === 'string' ? img : img.url_list?.[0] || img.url || ''));
+      rawImages = data.images.map((img) => normalizeMediaUrl(typeof img === 'string' ? img : img.url_list?.[0] || img.url || ''));
     } else if (Array.isArray(data.image_post_info?.images)) {
-      rawImages = data.image_post_info.images.map((img) => img.display_image?.url_list?.[0] || img.url || '');
+      rawImages = data.image_post_info.images.map((img) => normalizeMediaUrl(img.display_image?.url_list?.[0] || img.url || ''));
     }
 
     const isImageCarousel = rawImages.length > 0;
@@ -298,12 +310,12 @@ async function handleExtract(url) {
     }
 
     // Format author with high-res avatar
-    const avatarHd = data.author?.avatar_larger || data.author?.avatar_medium || data.author?.avatar || '';
+    const avatarHd = normalizeMediaUrl(data.author?.avatar_larger || data.author?.avatar_medium || data.author?.avatar || '');
     const author = {
       id: data.author?.id || '',
       unique_id: data.author?.unique_id || 'unknown_creator',
       nickname: data.author?.nickname || 'TikTok Creator',
-      avatar: data.author?.avatar || '',
+      avatar: normalizeMediaUrl(data.author?.avatar || avatarHd),
       avatar_hd: avatarHd,
       signature: data.author?.signature || '',
     };
@@ -322,22 +334,26 @@ async function handleExtract(url) {
       id: data.music_info?.id || data.music_id || '',
       title: data.music_info?.title || data.music || 'Original Sound',
       author: data.music_info?.author || author.nickname,
-      play_url: data.music || data.music_info?.play || '',
-      cover: data.music_info?.cover || '',
+      play_url: normalizeMediaUrl(data.music || data.music_info?.play || ''),
+      cover: normalizeMediaUrl(data.music_info?.cover || ''),
       duration: data.music_info?.duration || 0,
     };
+
+    const playVideoUrl = normalizeMediaUrl(data.play || '');
+    const hdVideoUrl = normalizeMediaUrl(data.hdplay || data.play || '');
+    const wmVideoUrl = normalizeMediaUrl(data.wmplay || '');
 
     // Format media links
     const media = {
       video: {
-        no_watermark: data.play || '',
-        hd: data.hdplay || data.play || '',
-        watermarked: data.wmplay || '',
+        no_watermark: playVideoUrl,
+        hd: hdVideoUrl,
+        watermarked: wmVideoUrl,
         size: data.size || 0,
         hd_size: data.hd_size || 0,
         duration: data.duration || 0,
-        cover: data.cover || data.origin_cover || '',
-        dynamic_cover: data.dynamic_cover || '',
+        cover: normalizeMediaUrl(data.cover || data.origin_cover || ''),
+        dynamic_cover: normalizeMediaUrl(data.dynamic_cover || ''),
       },
       images: rawImages,
       images_count: rawImages.length,
@@ -345,7 +361,7 @@ async function handleExtract(url) {
         ? rawImages.map((imgUrl, idx) => ({
             index: idx + 1,
             image_url: imgUrl,
-            motion_preview: data.play || '',
+            motion_preview: playVideoUrl,
           }))
         : [],
       music,
@@ -401,16 +417,13 @@ async function handleDownload(url) {
   }
 
   try {
-    let cleanMediaUrl = mediaUrl.trim();
-    if (cleanMediaUrl.startsWith('//')) {
-      cleanMediaUrl = 'https:' + cleanMediaUrl;
-    } else if (cleanMediaUrl.startsWith('/')) {
-      cleanMediaUrl = 'https://www.tikwm.com' + cleanMediaUrl;
-    }
+    const cleanMediaUrl = normalizeMediaUrl(mediaUrl);
 
+    const isTikwm = cleanMediaUrl.includes('tikwm.com');
     const fetchHeaders = {
       'User-Agent': USER_AGENT,
       'Accept': '*/*',
+      'Referer': isTikwm ? 'https://www.tikwm.com/' : 'https://www.tiktok.com/',
       'Accept-Encoding': 'identity',
     };
 

@@ -26,6 +26,18 @@ app.use((req, res, next) => {
 });
 
 /**
+ * Normalizes relative URLs (e.g. from TikWM API) to absolute HTTPS URLs
+ */
+function normalizeMediaUrl(url: any): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('//')) return 'https:' + trimmed;
+  if (trimmed.startsWith('/')) return 'https://www.tikwm.com' + trimmed;
+  return trimmed;
+}
+
+/**
  * Resolves short links like vm.tiktok.com or vt.tiktok.com
  */
 async function resolveTikTokUrl(inputUrl: string): Promise<string> {
@@ -109,22 +121,22 @@ app.get('/api/extract', async (req: Request, res: Response) => {
       const userStats = infoJson?.data?.stats || {};
       const rawVideos = Array.isArray(postsJson?.data?.videos) ? postsJson.data.videos : [];
 
-      const avatarHd = userInfo.avatarLarger || userInfo.avatarMedium || userInfo.avatarThumb || '';
+      const avatarHd = normalizeMediaUrl(userInfo.avatarLarger || userInfo.avatarMedium || userInfo.avatarThumb || '');
 
       const profileVideos = rawVideos.map((v: any) => ({
         id: v.id || '',
         title: v.title || '',
-        cover: v.cover || v.origin_cover || '',
+        cover: normalizeMediaUrl(v.cover || v.origin_cover || ''),
         duration: v.duration || 0,
-        play: v.play || '',
-        hdplay: v.hdplay || v.play || '',
-        wmplay: v.wmplay || '',
+        play: normalizeMediaUrl(v.play || ''),
+        hdplay: normalizeMediaUrl(v.hdplay || v.play || ''),
+        wmplay: normalizeMediaUrl(v.wmplay || ''),
         views: v.play_count || 0,
         likes: v.digg_count || 0,
         comments: v.comment_count || 0,
         shares: v.share_count || 0,
         created_at: v.create_time ? new Date(v.create_time * 1000).toISOString() : '',
-        images: Array.isArray(v.images) ? v.images : []
+        images: Array.isArray(v.images) ? v.images.map((img: string) => normalizeMediaUrl(img)) : []
       }));
 
       return res.json({
@@ -138,7 +150,7 @@ app.get('/api/extract', async (req: Request, res: Response) => {
           id: userInfo.id || '',
           unique_id: userInfo.uniqueId || uniqueId,
           nickname: userInfo.nickname || uniqueId,
-          avatar: userInfo.avatarThumb || userInfo.avatarMedium || avatarHd,
+          avatar: normalizeMediaUrl(userInfo.avatarThumb || userInfo.avatarMedium || avatarHd),
           avatar_hd: avatarHd,
           signature: userInfo.signature || '',
           verified: userInfo.verified || false
@@ -212,9 +224,9 @@ app.get('/api/extract', async (req: Request, res: Response) => {
     // Extract all images dynamically (supporting carousels up to 35+ images)
     let rawImages: string[] = [];
     if (Array.isArray(data.images) && data.images.length > 0) {
-      rawImages = data.images.map((img: any) => (typeof img === 'string' ? img : img.url_list?.[0] || img.url || ''));
+      rawImages = data.images.map((img: any) => normalizeMediaUrl(typeof img === 'string' ? img : img.url_list?.[0] || img.url || ''));
     } else if (Array.isArray(data.image_post_info?.images)) {
-      rawImages = data.image_post_info.images.map((img: any) => img.display_image?.url_list?.[0] || img.url || '');
+      rawImages = data.image_post_info.images.map((img: any) => normalizeMediaUrl(img.display_image?.url_list?.[0] || img.url || ''));
     }
 
     const isImageCarousel = rawImages.length > 0;
@@ -229,12 +241,12 @@ app.get('/api/extract', async (req: Request, res: Response) => {
       contentType = 'video';
     }
 
-    const avatarHd = data.author?.avatar_larger || data.author?.avatar_medium || data.author?.avatar || '';
+    const avatarHd = normalizeMediaUrl(data.author?.avatar_larger || data.author?.avatar_medium || data.author?.avatar || '');
     const author = {
       id: data.author?.id || '',
       unique_id: data.author?.unique_id || 'unknown_creator',
       nickname: data.author?.nickname || 'TikTok Creator',
-      avatar: data.author?.avatar || '',
+      avatar: normalizeMediaUrl(data.author?.avatar || avatarHd),
       avatar_hd: avatarHd,
       signature: data.author?.signature || '',
     };
@@ -251,21 +263,25 @@ app.get('/api/extract', async (req: Request, res: Response) => {
       id: data.music_info?.id || data.music_id || '',
       title: data.music_info?.title || data.music || 'Original Sound',
       author: data.music_info?.author || author.nickname,
-      play_url: data.music || data.music_info?.play || '',
-      cover: data.music_info?.cover || '',
+      play_url: normalizeMediaUrl(data.music || data.music_info?.play || ''),
+      cover: normalizeMediaUrl(data.music_info?.cover || ''),
       duration: data.music_info?.duration || 0,
     };
 
+    const playVideoUrl = normalizeMediaUrl(data.play || '');
+    const hdVideoUrl = normalizeMediaUrl(data.hdplay || data.play || '');
+    const wmVideoUrl = normalizeMediaUrl(data.wmplay || '');
+
     const media = {
       video: {
-        no_watermark: data.play || '',
-        hd: data.hdplay || data.play || '',
-        watermarked: data.wmplay || '',
+        no_watermark: playVideoUrl,
+        hd: hdVideoUrl,
+        watermarked: wmVideoUrl,
         size: data.size || 0,
         hd_size: data.hd_size || 0,
         duration: data.duration || 0,
-        cover: data.cover || data.origin_cover || '',
-        dynamic_cover: data.dynamic_cover || '',
+        cover: normalizeMediaUrl(data.cover || data.origin_cover || ''),
+        dynamic_cover: normalizeMediaUrl(data.dynamic_cover || ''),
       },
       images: rawImages,
       images_count: rawImages.length,
@@ -273,7 +289,7 @@ app.get('/api/extract', async (req: Request, res: Response) => {
         ? rawImages.map((imgUrl: string, idx: number) => ({
             index: idx + 1,
             image_url: imgUrl,
-            motion_preview: data.play || '',
+            motion_preview: playVideoUrl,
           }))
         : [],
       music,
@@ -311,16 +327,13 @@ app.get('/api/download', async (req: Request, res: Response) => {
   }
 
   try {
-    let cleanMediaUrl = mediaUrl.trim();
-    if (cleanMediaUrl.startsWith('//')) {
-      cleanMediaUrl = 'https:' + cleanMediaUrl;
-    } else if (cleanMediaUrl.startsWith('/')) {
-      cleanMediaUrl = 'https://www.tikwm.com' + cleanMediaUrl;
-    }
+    const cleanMediaUrl = normalizeMediaUrl(mediaUrl);
 
+    const isTikwm = cleanMediaUrl.includes('tikwm.com');
     const fetchHeaders: Record<string, string> = {
       'User-Agent': USER_AGENT,
       'Accept': '*/*',
+      'Referer': isTikwm ? 'https://www.tikwm.com/' : 'https://www.tiktok.com/',
       'Accept-Encoding': 'identity',
     };
 

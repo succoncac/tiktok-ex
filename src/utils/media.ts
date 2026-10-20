@@ -1,6 +1,19 @@
 import JSZip from 'jszip';
 
 /**
+ * Ensures relative URLs are converted to valid absolute URLs
+ */
+export function ensureAbsoluteUrl(url: string): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (trimmed.startsWith('//')) return 'https:' + trimmed;
+  if (trimmed.startsWith('/') && !trimmed.startsWith('/api/')) {
+    return 'https://www.tikwm.com' + trimmed;
+  }
+  return trimmed;
+}
+
+/**
  * Validates whether a response blob is real media or an HTML/error response
  */
 async function isValidMediaBlob(blob: Blob): Promise<boolean> {
@@ -8,12 +21,18 @@ async function isValidMediaBlob(blob: Blob): Promise<boolean> {
   if (blob.type.includes('text/html') || blob.type.includes('application/json')) {
     return false;
   }
-  // If small payload, inspect first 50 bytes for HTML doctype/tags
-  if (blob.size < 2000) {
+  // If small payload, inspect first 100 bytes for HTML doctype/tags
+  if (blob.size < 4000) {
     try {
-      const text = await blob.slice(0, 100).text();
+      const text = await blob.slice(0, 200).text();
       const lower = text.toLowerCase().trim();
-      if (lower.startsWith('<!doctype') || lower.startsWith('<html') || lower.startsWith('{"error"') || lower.startsWith('{"success":false')) {
+      if (
+        lower.startsWith('<!doctype') ||
+        lower.startsWith('<html') ||
+        lower.includes('<body') ||
+        lower.startsWith('{"error"') ||
+        lower.startsWith('{"success":false')
+      ) {
         return false;
       }
     } catch {
@@ -42,10 +61,11 @@ function saveBlob(blob: Blob, filename: string): void {
  * Multi-layer resilient downloader:
  * Layer 1: Proxy streaming via /api/download (with strict binary verification)
  * Layer 2: Client-side device direct fetch (bypasses server geographic blocks)
- * Layer 3: Clean stream opening in new tab
+ * Layer 3: Clean stream download anchor / window
  */
-export async function downloadMedia(url: string, filename: string): Promise<void> {
-  if (!url) return;
+export async function downloadMedia(rawUrl: string, filename: string): Promise<void> {
+  if (!rawUrl) return;
+  const url = ensureAbsoluteUrl(rawUrl);
 
   // Layer 1: Fetch through proxy with blob validation (NEVER download raw HTML)
   try {
@@ -106,7 +126,8 @@ export async function downloadImagesAsZip(
   let addedCount = 0;
 
   for (let i = 0; i < imageUrls.length; i++) {
-    const imgUrl = imageUrls[i];
+    const rawImgUrl = imageUrls[i];
+    const imgUrl = ensureAbsoluteUrl(rawImgUrl);
     let added = false;
 
     // Try proxy first
