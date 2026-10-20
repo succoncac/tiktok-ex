@@ -10,15 +10,16 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 app.use(express.json());
 
-// CORS Middleware
+// Global CORS Middleware
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
@@ -35,6 +36,67 @@ function normalizeMediaUrl(url: any): string {
   if (trimmed.startsWith('//')) return 'https:' + trimmed;
   if (trimmed.startsWith('/')) return 'https://www.tikwm.com' + trimmed;
   return trimmed;
+}
+
+/**
+ * Robust JSON fetcher that NEVER crashes with "Unexpected token '<', <!doctype"
+ * If upstream returns HTML (Cloudflare challenge, 502/503 HTML error), handles it gracefully.
+ */
+async function safeFetchJson(url: string, options: RequestInit = {}): Promise<{
+  ok: boolean;
+  status: number;
+  isHtml: boolean;
+  data: any;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    const trimmed = text.trim();
+
+    // Detect HTML responses from upstream
+    if (
+      trimmed.startsWith('<!DOCTYPE') ||
+      trimmed.startsWith('<!doctype') ||
+      trimmed.startsWith('<html') ||
+      trimmed.startsWith('<head') ||
+      trimmed.includes('<body')
+    ) {
+      return {
+        ok: false,
+        status: res.status,
+        isHtml: true,
+        data: null,
+        error: `Máy chủ dịch vụ trả về trang HTML (HTTP ${res.status}) thay vì JSON.`,
+      };
+    }
+
+    try {
+      const data = JSON.parse(text);
+      return {
+        ok: res.ok,
+        status: res.status,
+        isHtml: false,
+        data,
+      };
+    } catch (parseErr: any) {
+      return {
+        ok: false,
+        status: res.status,
+        isHtml: false,
+        data: null,
+        error: 'Phản hồi không phải định dạng JSON hợp lệ: ' + parseErr.message,
+      };
+    }
+  } catch (netErr: any) {
+    return {
+      ok: false,
+      status: 0,
+      isHtml: false,
+      data: null,
+      error: netErr.message || 'Lỗi kết nối mạng upstream',
+    };
+  }
 }
 
 /**
@@ -72,6 +134,17 @@ async function resolveTikTokUrl(inputUrl: string): Promise<string> {
 }
 
 /**
+ * Health check endpoint
+ */
+app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
+  res.json({
+    status: 'online',
+    service: 'TikTok Raw Media Extractor',
+    version: '2.0.0',
+  });
+});
+
+/**
  * API: Extract raw media metadata and direct CDN links
  */
 app.get('/api/extract', async (req: Request, res: Response) => {
@@ -80,7 +153,7 @@ app.get('/api/extract', async (req: Request, res: Response) => {
   if (!targetUrl) {
     return res.status(400).json({
       success: false,
-      error: 'Missing required "url" parameter',
+      error: 'Thiếu tham số "url". Vui lòng dán link video hoặc ảnh TikTok.',
     });
   }
 
@@ -106,20 +179,17 @@ app.get('/api/extract', async (req: Request, res: Response) => {
     if (isProfileUrl && profileMatch) {
       const uniqueId = profileMatch[1];
       const [infoRes, postsRes] = await Promise.all([
-        fetch(`https://www.tikwm.com/api/user/info?unique_id=${encodeURIComponent(uniqueId)}`, {
+        safeFetchJson(`https://www.tikwm.com/api/user/info?unique_id=${encodeURIComponent(uniqueId)}`, {
           headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-        }).catch(() => null),
-        fetch(`https://www.tikwm.com/api/user/posts?unique_id=${encodeURIComponent(uniqueId)}&count=35`, {
+        }),
+        safeFetchJson(`https://www.tikwm.com/api/user/posts?unique_id=${encodeURIComponent(uniqueId)}&count=35`, {
           headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-        }).catch(() => null),
+        }),
       ]);
 
-      const infoJson = infoRes && infoRes.ok ? await infoRes.json() : null;
-      const postsJson = postsRes && postsRes.ok ? await postsRes.json() : null;
-
-      const userInfo = infoJson?.data?.user || {};
-      const userStats = infoJson?.data?.stats || {};
-      const rawVideos = Array.isArray(postsJson?.data?.videos) ? postsJson.data.videos : [];
+      const userInfo = infoRes.data?.data?.user || {};
+      const userStats = infoRes.data?.data?.stats || {};
+      const rawVideos = Array.isArray(postsRes.data?.data?.videos) ? postsRes.data.data.videos : [];
 
       const avatarHd = normalizeMediaUrl(userInfo.avatarLarger || userInfo.avatarMedium || userInfo.avatarThumb || '');
 
@@ -136,7 +206,7 @@ app.get('/api/extract', async (req: Request, res: Response) => {
         comments: v.comment_count || 0,
         shares: v.share_count || 0,
         created_at: v.create_time ? new Date(v.create_time * 1000).toISOString() : '',
-        images: Array.isArray(v.images) ? v.images.map((img: string) => normalizeMediaUrl(img)) : []
+        images: Array.isArray(v.images) ? v.images.map(normalizeMediaUrl) : [],
       }));
 
       return res.json({
@@ -153,80 +223,157 @@ app.get('/api/extract', async (req: Request, res: Response) => {
           avatar: normalizeMediaUrl(userInfo.avatarThumb || userInfo.avatarMedium || avatarHd),
           avatar_hd: avatarHd,
           signature: userInfo.signature || '',
-          verified: userInfo.verified || false
+          verified: userInfo.verified || false,
         },
         stats: {
           plays: userStats.heartCount || userStats.heart || 0,
           likes: userStats.diggCount || 0,
           comments: userStats.followerCount || 0,
           shares: userStats.followingCount || 0,
-          downloads: userStats.videoCount || profileVideos.length
+          downloads: userStats.videoCount || profileVideos.length,
         },
         profile: {
           followers: userStats.followerCount || 0,
           following: userStats.followingCount || 0,
           hearts: userStats.heartCount || userStats.heart || 0,
           video_count: userStats.videoCount || profileVideos.length,
-          signature: userInfo.signature || ''
+          signature: userInfo.signature || '',
         },
-        profile_videos: profileVideos
+        profile_videos: profileVideos,
       });
     }
 
-    // Call TikWM API with HD enabled
-    let apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(resolvedUrl)}&hd=1`;
-    let apiResponse = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        'User-Agent': USER_AGENT,
-        Accept: 'application/json',
-      },
-    });
-
-    if (!apiResponse.ok) {
-      return res.status(502).json({
-        success: false,
-        error: `Media extraction service returned HTTP ${apiResponse.status}`,
-      });
-    }
-
-    let payload = await apiResponse.json();
-
-    // Fallback: If story/highlight or photo link returned an error, retry with normalized /video/ path
-    if (payload.code !== 0 && (resolvedUrl.includes('/story/') || resolvedUrl.includes('/photo/'))) {
-      const normalizedUrl = resolvedUrl.replace(/\/story\//, '/video/').replace(/\/photo\//, '/video/');
-      const retryRes = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(normalizedUrl)}&hd=1`, {
+    // Step 1: Try Primary Provider (TikWM via GET)
+    let payload: any = null;
+    let tikwmRes = await safeFetchJson(
+      `https://www.tikwm.com/api/?url=${encodeURIComponent(resolvedUrl)}&hd=1`,
+      {
         method: 'GET',
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        headers: {
+          'User-Agent': USER_AGENT,
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    if (tikwmRes.ok && tikwmRes.data && tikwmRes.data.code === 0 && tikwmRes.data.data) {
+      payload = tikwmRes.data;
+    }
+
+    // Step 2: Fallback 1 - Try TikWM via POST (bypasses Cloudflare GET query firewall blocks)
+    if (!payload) {
+      const postBody = new URLSearchParams();
+      postBody.append('url', resolvedUrl);
+      postBody.append('hd', '1');
+
+      const tikwmPostRes = await safeFetchJson('https://www.tikwm.com/api/', {
+        method: 'POST',
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: postBody.toString(),
       });
-      if (retryRes.ok) {
-        const retryPayload = await retryRes.json();
-        if (retryPayload.code === 0 && retryPayload.data) {
-          payload = retryPayload;
-          resolvedUrl = normalizedUrl;
+
+      if (tikwmPostRes.ok && tikwmPostRes.data && tikwmPostRes.data.code === 0 && tikwmPostRes.data.data) {
+        payload = tikwmPostRes.data;
+      }
+    }
+
+    // Step 3: Fallback 2 - If story/highlight or photo link returned an error, retry with normalized /video/ path
+    if (
+      (!payload || payload.code !== 0) &&
+      (resolvedUrl.includes('/story/') || resolvedUrl.includes('/photo/'))
+    ) {
+      const normalizedUrl = resolvedUrl.replace(/\/story\//, '/video/').replace(/\/photo\//, '/video/');
+      const retryRes = await safeFetchJson(
+        `https://www.tikwm.com/api/?url=${encodeURIComponent(normalizedUrl)}&hd=1`,
+        {
+          method: 'GET',
+          headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        }
+      );
+      if (retryRes.ok && retryRes.data && retryRes.data.code === 0 && retryRes.data.data) {
+        payload = retryRes.data;
+        resolvedUrl = normalizedUrl;
+      }
+    }
+
+    // Step 4: Fallback 3 - Secondary Public API (TiklyDown)
+    if (!payload || !payload.data) {
+      const secondaryRes = await safeFetchJson(
+        `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(resolvedUrl)}`,
+        {
+          method: 'GET',
+          headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        }
+      );
+
+      if (secondaryRes.ok && secondaryRes.data) {
+        const sec = secondaryRes.data;
+        const secImages = Array.isArray(sec.images) ? sec.images.map((img: any) => normalizeMediaUrl(img.url || img)) : [];
+        const secVideoPlay = normalizeMediaUrl(sec.video?.noWatermark || sec.video?.watermark || sec.url || '');
+
+        if (secVideoPlay || secImages.length > 0) {
+          payload = {
+            code: 0,
+            data: {
+              id: sec.id || '',
+              title: sec.title || '',
+              play: secVideoPlay,
+              hdplay: secVideoPlay,
+              wmplay: normalizeMediaUrl(sec.video?.watermark || ''),
+              duration: sec.duration || 0,
+              images: secImages,
+              cover: normalizeMediaUrl(sec.cover || ''),
+              author: {
+                id: sec.author?.id || '',
+                unique_id: sec.author?.unique_id || sec.author?.name || 'tiktok_creator',
+                nickname: sec.author?.nickname || sec.author?.name || 'TikTok Creator',
+                avatar: normalizeMediaUrl(sec.author?.avatar || ''),
+                avatar_larger: normalizeMediaUrl(sec.author?.avatar || ''),
+              },
+              music_info: {
+                id: sec.music?.id || '',
+                title: sec.music?.title || '',
+                author: sec.music?.author || '',
+                play: normalizeMediaUrl(sec.music?.play_url || ''),
+                cover: normalizeMediaUrl(sec.music?.cover || ''),
+              },
+              play_count: sec.stats?.playCount || 0,
+              digg_count: sec.stats?.likeCount || 0,
+              comment_count: sec.stats?.commentCount || 0,
+              share_count: sec.stats?.shareCount || 0,
+              download_count: sec.stats?.downloadCount || 0,
+            },
+          };
         }
       }
     }
 
-    if (payload.code !== 0 || !payload.data) {
+    if (!payload || payload.code !== 0 || !payload.data) {
       return res.status(422).json({
         success: false,
-        error: payload.msg || 'Không thể lấy dữ liệu từ link này. Bài đăng có thể đã bị xóa hoặc ở chế độ riêng tư.',
+        error:
+          payload?.msg ||
+          'Không thể lấy dữ liệu từ link này. Bài đăng có thể đã bị xóa, giới hạn quyền riêng tư hoặc dịch vụ TikTok đang bận.',
       });
     }
 
     const data = payload.data;
 
     // Detect Content Type:
-    // 1. "images" - photo carousel / slideshow
-    // 2. "live_photo" - dynamic / live photo sequence
-    // 3. "video" - standard or HD watermark-free video
     // Extract all images dynamically (supporting carousels up to 35+ images)
     let rawImages: string[] = [];
     if (Array.isArray(data.images) && data.images.length > 0) {
-      rawImages = data.images.map((img: any) => normalizeMediaUrl(typeof img === 'string' ? img : img.url_list?.[0] || img.url || ''));
+      rawImages = data.images.map((img: any) =>
+        normalizeMediaUrl(typeof img === 'string' ? img : img.url_list?.[0] || img.url || '')
+      );
     } else if (Array.isArray(data.image_post_info?.images)) {
-      rawImages = data.image_post_info.images.map((img: any) => normalizeMediaUrl(img.display_image?.url_list?.[0] || img.url || ''));
+      rawImages = data.image_post_info.images.map((img: any) =>
+        normalizeMediaUrl(img.display_image?.url_list?.[0] || img.url || '')
+      );
     }
 
     const isImageCarousel = rawImages.length > 0;
@@ -241,7 +388,9 @@ app.get('/api/extract', async (req: Request, res: Response) => {
       contentType = 'video';
     }
 
-    const avatarHd = normalizeMediaUrl(data.author?.avatar_larger || data.author?.avatar_medium || data.author?.avatar || '');
+    const avatarHd = normalizeMediaUrl(
+      data.author?.avatar_larger || data.author?.avatar_medium || data.author?.avatar || ''
+    );
     const author = {
       id: data.author?.id || '',
       unique_id: data.author?.unique_id || 'unknown_creator',
@@ -249,6 +398,7 @@ app.get('/api/extract', async (req: Request, res: Response) => {
       avatar: normalizeMediaUrl(data.author?.avatar || avatarHd),
       avatar_hd: avatarHd,
       signature: data.author?.signature || '',
+      verified: Boolean(data.author?.verified),
     };
 
     const stats = {
@@ -260,10 +410,10 @@ app.get('/api/extract', async (req: Request, res: Response) => {
     };
 
     const music = {
-      id: data.music_info?.id || data.music_id || '',
-      title: data.music_info?.title || data.music || 'Original Sound',
+      id: data.music_info?.id || data.music || '',
+      title: data.music_info?.title || 'Original Sound',
       author: data.music_info?.author || author.nickname,
-      play_url: normalizeMediaUrl(data.music || data.music_info?.play || ''),
+      play_url: normalizeMediaUrl(data.music_info?.play || data.music_info?.url || data.music || ''),
       cover: normalizeMediaUrl(data.music_info?.cover || ''),
       duration: data.music_info?.duration || 0,
     };
@@ -310,7 +460,7 @@ app.get('/api/extract', async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({
       success: false,
-      error: error.message || 'An error occurred while processing the TikTok URL.',
+      error: error.message || 'Lỗi xử lý khi trích xuất dữ liệu TikTok.',
     });
   }
 });
@@ -332,8 +482,8 @@ app.get('/api/download', async (req: Request, res: Response) => {
     const isTikwm = cleanMediaUrl.includes('tikwm.com');
     const fetchHeaders: Record<string, string> = {
       'User-Agent': USER_AGENT,
-      'Accept': '*/*',
-      'Referer': isTikwm ? 'https://www.tikwm.com/' : 'https://www.tiktok.com/',
+      Accept: '*/*',
+      Referer: isTikwm ? 'https://www.tikwm.com/' : 'https://www.tiktok.com/',
       'Accept-Encoding': 'identity',
     };
 
@@ -342,7 +492,7 @@ app.get('/api/download', async (req: Request, res: Response) => {
     if (!mediaRes.ok) {
       return res.status(mediaRes.status).json({
         success: false,
-        error: `CDN returned HTTP ${mediaRes.status}`,
+        error: `CDN returned status ${mediaRes.status}`,
       });
     }
 
@@ -401,6 +551,25 @@ app.get('/api/download', async (req: Request, res: Response) => {
   }
 });
 
+// Explicit 404 handler for any /api/* route: ALWAYS returns JSON, NEVER falls through to Vite HTML
+app.all('/api/*', (req: Request, res: Response) => {
+  res.status(404).json({
+    success: false,
+    error: `API route '${req.originalUrl}' không tồn tại.`,
+  });
+});
+
+// Global Express error middleware
+app.use((err: any, _req: Request, res: Response, next: any) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(500).json({
+    success: false,
+    error: err.message || 'Lỗi xử lý máy chủ nội bộ.',
+  });
+});
+
 // Vite or Static files handling
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
@@ -415,7 +584,7 @@ async function startServer() {
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }

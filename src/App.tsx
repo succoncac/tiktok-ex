@@ -19,10 +19,39 @@ export default function App() {
 
     try {
       const response = await fetch(`/api/extract?url=${encodeURIComponent(url)}`);
-      const data = await response.json();
+      const rawText = await response.text();
+      const trimmed = rawText.trim();
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Không thể lấy thông tin từ liên kết này. Video có thể đã bị xóa hoặc ở chế độ riêng tư.');
+      // Check if response is an HTML error page (Cloudflare challenge, 404/500 HTML error, etc.)
+      if (
+        trimmed.startsWith('<!DOCTYPE') ||
+        trimmed.startsWith('<!doctype') ||
+        trimmed.startsWith('<html') ||
+        trimmed.startsWith('<head') ||
+        trimmed.includes('<body')
+      ) {
+        let friendlyMsg = 'Dịch vụ trích xuất trả về trang web HTML thay vì dữ liệu JSON.';
+        if (response.status === 404) {
+          friendlyMsg = 'Không tìm thấy API trích xuất (/api/extract).';
+        } else if (response.status === 502 || response.status === 504) {
+          friendlyMsg = 'Máy chủ trung gian hoặc Proxy đang quá tải (502/504). Vui lòng thử lại sau vài giây.';
+        } else if (response.status === 403) {
+          friendlyMsg = 'Bị chặn bởi Cloudflare Security / Firewall. Vui lòng thử lại sau giây lát.';
+        } else if (response.status >= 500) {
+          friendlyMsg = `Lỗi máy chủ nội bộ (HTTP ${response.status}). Vui lòng thử lại.`;
+        }
+        throw new Error(friendlyMsg);
+      }
+
+      let data: any = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        throw new Error('Dữ liệu máy chủ trả về không đúng định dạng JSON chuẩn.');
+      }
+
+      if (!response.ok || !data || !data.success) {
+        throw new Error(data?.error || 'Không thể lấy thông tin từ liên kết này. Video có thể đã bị xóa hoặc ở chế độ riêng tư.');
       }
 
       setResult(data);
