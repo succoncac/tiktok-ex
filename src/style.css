@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+:root {
+  --color-tiktok-red: #fe2c55;
+  --color-tiktok-cyan: #25f4ee;
+  --color-bg-dark: #09090b;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: var(--color-bg-dark);
+  color: #f4f4f5;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Glassmorphism Cards */
+.glass-panel {
+  background: rgba(24, 24, 27, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(63, 63, 70, 0.4);
+}
+
+.glass-panel-elevated {
+  background: rgba(18, 18, 20, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(82, 82, 91, 0.5);
+}
+
+/* Gallery Grid & Image Cards */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (min-width: 640px) {
+  .gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .gallery-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .gallery-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .gallery-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.image-card {
+  position: relative;
+  background-color: #09090b;
+  border: 1px solid rgba(63, 63, 70, 0.4);
+  border-radius: 1rem;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.image-card:hover {
+  border-color: rgba(161, 161, 170, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.8);
+}
+
+.image-thumb-wrapper {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  background-color: #18181b;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.image-thumb-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.image-card:hover .image-thumb-wrapper img {
+  transform: scale(1.05);
+}
+
+.image-badge {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.05em;
+  font-family: monospace;
+}
+
+.image-actions {
+  padding: 0.75rem;
+  background: #0d0d10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(39, 39, 42, 0.8);
+}
+
+/* Glow Input */
+.glow-input-container {
+  position: relative;
+}
+
+.glow-input-container::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(90deg, rgba(254, 44, 85, 0.35), rgba(168, 85, 247, 0.25), rgba(37, 244, 238, 0.35));
+  border-radius: 1.25rem;
+  filter: blur(10px);
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.glow-input-container:focus-within::before,
+.glow-input-container:hover::before {
+  opacity: 0.9;
+}
+
+/* Animations */
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spinSlow 12s linear infinite;
+}
+
+/* Lightbox Modal */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+/* Toast */
+.toast-notice {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 999;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  color: #fff;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

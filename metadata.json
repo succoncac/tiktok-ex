@@ -1,0 +1,6 @@
+{
+  "name": "TikTok Raw Media Extractor",
+  "description": "High-performance extractor for watermark-free TikTok videos, high-res photo carousels, and audio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
