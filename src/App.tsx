@@ -106,7 +106,7 @@ export default function App() {
             ) : (
               /* Case 2: Single Video, Photo Carousel, or Story */
               <>
-                {/* Author Card with HD Avatar download */}
+                {/* Author Card with Avatar download */}
                 <AuthorCard
                   author={result.author}
                   stats={result.stats}

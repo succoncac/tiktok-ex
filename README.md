@@ -8,7 +8,7 @@ A high-performance, full-stack application and standalone Cloudflare Worker for 
 
 1. **Raw Video Stream**:
    - Direct CDN extraction without platform player UI wrappers or TikTok watermark logos.
-   - 1080p Ultra HD and standard quality endpoints.
+   - 1080p Ultra and standard quality endpoints.
    - Direct download with custom file naming (`tiktok_@author_id_nowatermark.mp4`).
    - Copy direct stream URL to clipboard.
 
@@ -44,7 +44,7 @@ A high-performance, full-stack application and standalone Cloudflare Worker for 
 │   │   ├── Header.tsx             # Navbar with brand logo & actions
 │   │   ├── UrlInputForm.tsx       # Search bar with paste and demo samples
 │   │   ├── AuthorCard.tsx         # Creator info, caption, and metrics
-│   │   ├── VideoSection.tsx       # Raw video player, HD switch, and downloads
+│   │   ├── VideoSection.tsx       # Raw video player and downloads
 │   │   ├── PhotoCarouselSection.tsx # Gallery grid, Lightbox, and ZIP downloader
 │   │   ├── LivePhotoSection.tsx   # Dynamic frames & motion preview
 │   │   ├── AudioSection.tsx       # Sound track extractor and player

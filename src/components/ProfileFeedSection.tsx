@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Author, UserProfileData, ProfileVideoItem } from '../types';
 import { downloadMedia, copyToClipboard, formatNumber, formatDuration } from '../utils/media';
-import { Download, Copy, Check, ExternalLink, Play, Eye, Heart, Film, User, CheckCircle2 } from 'lucide-react';
+import { Download, Copy, Check, ExternalLink, Eye, Film, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ProfileFeedSectionProps {
   author: Author;
@@ -13,18 +13,42 @@ export const ProfileFeedSection: React.FC<ProfileFeedSectionProps> = ({ author, 
   const [copiedAvatar, setCopiedAvatar] = useState(false);
   const [copiedVideoId, setCopiedVideoId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [isBioExpanded, setIsBioExpanded] = useState(false);
 
-  const avatarUrl = author.avatar_hd || author.avatar;
+  const initialAvatar = author.avatar_hd || author.avatar || '';
+  const [avatarSrc, setAvatarSrc] = useState(initialAvatar);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    const nextUrl = author.avatar_hd || author.avatar || '';
+    setAvatarSrc(nextUrl);
+    setAvatarFailed(!nextUrl);
+  }, [author.avatar_hd, author.avatar]);
+
+  const handleAvatarError = () => {
+    if (!avatarSrc) {
+      setAvatarFailed(true);
+      return;
+    }
+    // If direct link failed and not yet proxied through /api/avatar, try proxy
+    if (!avatarSrc.startsWith('/api/avatar')) {
+      setAvatarSrc(`/api/avatar?url=${encodeURIComponent(avatarSrc)}`);
+    } else {
+      setAvatarFailed(true);
+    }
+  };
 
   const handleDownloadAvatar = async () => {
-    if (!avatarUrl) return;
+    const targetUrl = avatarSrc || initialAvatar;
+    if (!targetUrl) return;
     const filename = `tiktok_avatar_@${author.unique_id}.jpg`;
-    await downloadMedia(avatarUrl, filename);
+    await downloadMedia(targetUrl, filename);
   };
 
   const handleCopyAvatar = async () => {
-    if (!avatarUrl) return;
-    const ok = await copyToClipboard(avatarUrl);
+    const targetUrl = avatarSrc || initialAvatar;
+    if (!targetUrl) return;
+    const ok = await copyToClipboard(targetUrl);
     if (ok) {
       setCopiedAvatar(true);
       setTimeout(() => setCopiedAvatar(false), 2000);
@@ -51,55 +75,136 @@ export const ProfileFeedSection: React.FC<ProfileFeedSectionProps> = ({ author, 
     }
   };
 
+  // Format bio text with links and hashtags
+  const renderBioContent = (text: string) => {
+    if (!text) return null;
+    const parts = text.split(/(https?:\/\/[^\s]+|#[a-zA-Z0-9_\p{L}]+|@[a-zA-Z0-9_.-]+)/gu);
+    return parts.map((part, index) => {
+      if (part.startsWith('http://') || part.startsWith('https://')) {
+        return (
+          <a
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#25f4ee] underline underline-offset-2 hover:opacity-80 break-all"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part}
+          </a>
+        );
+      }
+      if (part.startsWith('#')) {
+        return (
+          <span key={index} className="text-[#25f4ee] font-medium">
+            {part}
+          </span>
+        );
+      }
+      if (part.startsWith('@')) {
+        return (
+          <span key={index} className="text-[#fe2c55] font-medium">
+            {part}
+          </span>
+        );
+      }
+      return <span key={index}>{part}</span>;
+    });
+  };
+
+  const signatureText = author.signature?.trim() || profile?.signature?.trim() || '';
+  const isBioLong = signatureText.length > 130 || signatureText.split('\n').length > 3;
+
   return (
     <div className="space-y-6">
       {/* Profile Overview Card */}
-      <div className="glass-panel rounded-2xl p-5 sm:p-6 shadow-xl">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 pb-5 border-b border-zinc-800">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            {/* Avatar with HD badge */}
+      <div className="glass-panel rounded-2xl p-4 sm:p-6 shadow-xl">
+        <div className="flex flex-col lg:flex-row items-start justify-between gap-5 pb-5 border-b border-zinc-800">
+          <div className="flex flex-col sm:flex-row items-start gap-4 min-w-0 flex-1 w-full">
+            {/* Avatar */}
             <div className="relative group shrink-0">
-              {avatarUrl ? (
+              {!avatarFailed && avatarSrc ? (
                 <img
-                  src={avatarUrl}
+                  src={avatarSrc}
                   alt={author.nickname}
-                  className="w-20 h-20 rounded-full object-cover border-2 border-[#fe2c55]/40 shadow-lg bg-zinc-800"
+                  className="w-20 h-20 sm:w-22 sm:h-22 rounded-full object-cover border-2 border-[#fe2c55]/40 shadow-lg bg-zinc-800"
                   referrerPolicy="no-referrer"
+                  onError={handleAvatarError}
                 />
               ) : (
-                <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-2xl text-zinc-300 border border-zinc-700">
+                <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-gradient-to-tr from-zinc-800 to-zinc-700 flex items-center justify-center font-bold text-2xl text-zinc-200 border border-zinc-600 shadow-md">
                   {author.unique_id?.[0]?.toUpperCase() || 'U'}
                 </div>
               )}
               {author.verified && (
-                <div className="absolute -bottom-1 -right-1 bg-zinc-950 p-0.5 rounded-full">
+                <div className="absolute -bottom-1 -right-1 bg-zinc-950 p-0.5 rounded-full shadow">
                   <CheckCircle2 className="w-5 h-5 text-[#25f4ee] fill-[#25f4ee]/20" />
                 </div>
               )}
             </div>
 
-            {/* User Meta */}
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-white">{author.nickname}</h2>
-                <span className="text-xs font-mono text-zinc-400">@{author.unique_id}</span>
+            {/* User Meta & Bio */}
+            <div className="min-w-0 flex-1 w-full space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight break-words">
+                  {author.nickname}
+                </h2>
+                <span className="text-xs font-mono text-zinc-400 bg-zinc-800/80 px-2 py-0.5 rounded-md border border-zinc-700/60">
+                  @{author.unique_id}
+                </span>
               </div>
-              {author.signature && (
-                <p className="text-xs text-zinc-300 mt-1 max-w-lg leading-relaxed whitespace-pre-line">
-                  {author.signature}
-                </p>
+
+              {/* Responsive Bio with Auto-wrap & Focus */}
+              {signatureText && (
+                <div className="w-full pt-1">
+                  <div
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Tiểu sử tài khoản"
+                    className={`group relative text-xs sm:text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] bg-zinc-950/40 border border-zinc-800/80 hover:border-zinc-700 focus:border-[#fe2c55]/70 focus:ring-2 focus:ring-[#fe2c55]/20 focus:outline-none rounded-xl p-3 sm:p-3.5 transition-all shadow-inner ${
+                      !isBioExpanded && isBioLong ? 'max-h-24 overflow-hidden' : ''
+                    }`}
+                  >
+                    <p className="select-text">{renderBioContent(signatureText)}</p>
+
+                    {/* Gradient fade when collapsed */}
+                    {!isBioExpanded && isBioLong && (
+                      <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-zinc-950/95 via-zinc-950/60 to-transparent pointer-events-none rounded-b-xl" />
+                    )}
+                  </div>
+
+                  {isBioLong && (
+                    <button
+                      type="button"
+                      onClick={() => setIsBioExpanded(!isBioExpanded)}
+                      className="mt-1.5 text-xs font-semibold text-[#25f4ee] hover:text-[#25f4ee]/80 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      {isBioExpanded ? (
+                        <>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                          <span>Thu gọn tiểu sử</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                          <span>Xem thêm tiểu sử</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
 
           {/* Avatar Actions */}
-          <div className="flex items-center gap-2 self-stretch sm:self-auto">
+          <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0 w-full sm:w-auto">
             <button
               onClick={handleDownloadAvatar}
               className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-gradient-to-r from-[#fe2c55] to-pink-600 hover:brightness-110 active:scale-95 rounded-xl transition-all shadow-md cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Tải Avatar HD</span>
+              <span>Tải Avatar</span>
             </button>
 
             <button
@@ -156,7 +261,7 @@ export const ProfileFeedSection: React.FC<ProfileFeedSectionProps> = ({ author, 
       </div>
 
       {/* Videos List Section */}
-      <div className="glass-panel rounded-2xl p-5 sm:p-6 shadow-xl">
+      <div className="glass-panel rounded-2xl p-4 sm:p-6 shadow-xl">
         <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-5">
           <div className="flex items-center gap-2">
             <Film className="w-4 h-4 text-[#25f4ee]" />

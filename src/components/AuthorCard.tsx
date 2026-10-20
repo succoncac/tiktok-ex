@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Author, Stats, ContentType } from '../types';
 import { formatNumber, downloadMedia } from '../utils/media';
 import { Eye, Heart, MessageCircle, Share2, Download, ExternalLink, CheckCircle2, Film, Image as ImageIcon, Flame } from 'lucide-react';
@@ -20,6 +20,28 @@ export const AuthorCard: React.FC<AuthorCardProps> = ({
   canonicalUrl,
   contentType,
 }) => {
+  const initialAvatar = author.avatar_hd || author.avatar || '';
+  const [avatarSrc, setAvatarSrc] = useState(initialAvatar);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    const nextUrl = author.avatar_hd || author.avatar || '';
+    setAvatarSrc(nextUrl);
+    setAvatarFailed(!nextUrl);
+  }, [author.avatar_hd, author.avatar]);
+
+  const handleAvatarError = () => {
+    if (!avatarSrc) {
+      setAvatarFailed(true);
+      return;
+    }
+    if (!avatarSrc.startsWith('/api/avatar')) {
+      setAvatarSrc(`/api/avatar?url=${encodeURIComponent(avatarSrc)}`);
+    } else {
+      setAvatarFailed(true);
+    }
+  };
+
   const formattedDate = new Date(createdAt).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -75,12 +97,13 @@ export const AuthorCard: React.FC<AuthorCardProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-800/80">
         <div className="flex items-center gap-3.5">
           <div className="relative">
-            {author.avatar ? (
+            {!avatarFailed && avatarSrc ? (
               <img
-                src={author.avatar}
+                src={avatarSrc}
                 alt={author.nickname}
                 className="w-13 h-13 rounded-full object-cover border-2 border-zinc-700 bg-zinc-800"
                 referrerPolicy="no-referrer"
+                onError={handleAvatarError}
               />
             ) : (
               <div className="w-13 h-13 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-zinc-300 border border-zinc-700">
@@ -113,7 +136,7 @@ export const AuthorCard: React.FC<AuthorCardProps> = ({
                 await downloadMedia(url, `tiktok_avatar_@${author.unique_id}.jpg`);
               }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors border border-zinc-700 cursor-pointer"
-              title="Tải ảnh đại diện HD của tác giả"
+              title="Tải ảnh đại diện của tác giả"
             >
               <Download className="w-3.5 h-3.5 text-[#fe2c55]" />
               <span>Tải Avatar</span>
